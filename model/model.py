@@ -8,7 +8,28 @@ logger = logging.getLogger()
 
 
 class Model(object):
-    pass
+    def __init__(self, points):
+        self._dates = []
+        self._values = []
+        self._predict = points
+        self._model = None
+
+    def append(self, date, value):
+        self._dates.append(date)
+        self._values.append(value)
+
+    def drop(self):
+        self._dates = []
+        self._values = []
+
+    def get_series(self):
+        return pd.Series(data=self._values, index=self._dates)
+
+    def auto(self):
+        pass
+
+    def predict(self):
+        pass
 
 
 class MessageHandler(Handler):
@@ -45,7 +66,7 @@ class MessageHandler(Handler):
         return response
 
     def begin_batch(self, begin_req):
-        pass
+        self._model.drop()
 
     def point(self, point):
         pass
