@@ -1,62 +1,71 @@
-from agent.agent import Server
-from model.model import Model, Accepter
+from agent.agent import Server, Agent
+from model.model import Model, MessageHandler
 import logging
 import os
-import sys
-import statsmodels.tsa.stattools as stattools
-from statsmodels.tsa.arima_model import ARIMA as ARIMA
+from statsmodels.tsa.stattools import arma_order_select_ic
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima_model import ARIMA
+from pandas.tseries.offsets import Second
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
 logger = logging.getLogger()
 
 
+def is_stationary(ts):
+    results = adfuller(ts, regression='ct')
+    return results[0] < results[4]['5%']
+
+
 class ARIMAModel(Model):
-    @redirect
-    def select_order(self):
+    def select_order_brute_force(self):
         def objfunc(order, endog, exog):
             from statsmodels.tsa.arima_model import ARIMA
-            old_target = sys.stdout
-            sys.stdout = open('/dev/null')
-            fit = ARIMA(endog, order, exog).fit()
-            sys.stdout = old_target
+            fit = ARIMA(endog, order, exog).fit(full_output=False)
             return fit.aic
 
         ts = self.get_series()
-        bic = stattools.arma_order_select_ic(ts).bic_min_order
-        grid = (slice(bic[0], bic[0]+1, 1), slice(1, 2, 1), slice(bic[1], bic[1]+1, 1))
+        bic = arma_order_select_ic(ts).bic_min_order
+        grid = (slice(bic[0], bic[0] + 1, 1), slice(1, 2, 1), slice(bic[1], bic[1] + 1, 1))
         from scipy.optimize import brute
         return brute(objfunc, grid, args=(ts, None), finish=None)
 
-    def is_stationary(self):
-        pass
+    def select_order(self):
+        ts = self.get_series()
+        if is_stationary(ts):
+            bic = arma_order_select_ic(ts).bic_min_order
+            return bic[0], 0, bic[1]
 
-    @redirect
+        ts1diff = ts.diff(periods=1).dropna()
+        if is_stationary(ts1diff):
+            bic = arma_order_select_ic(ts1diff).bic_min_order
+            return bic[0], 1, bic[1]
+
+        ts2diff = ts.diff(periods=2).dropna()
+        bic = arma_order_select_ic(ts2diff).bic_min_order
+
+        return bic[0], 2, bic[1]
+
     def auto(self):
+        ts = self.get_series()
+        self._period = ts.index[1] - ts.index[0]
+        freq = Second(self._period.total_seconds())
         order = self.select_order()
-        self._model = ARIMA(self.get_series(), order).fit()
+        self._model = ARIMA(self.get_series(), order=order, freq=freq).fit()
 
     def predict(self):
-        ts = self.get_series()
-        period = ts.index[-1] - ts.index[-2]
-        start_date = ts.index[-1]
-        end_date = start_date + self._predict * period
-        return self._model.predict(start_date, end_date)
+        start_date = self._model.resid.index[-1]
+        end_date = start_date + self._predict * self._period
+        # shift = self.max() - self.min()
+        forecast = self._model.predict(start_date.isoformat(), end_date.isoformat())
 
-
-def redirect(f):
-    def wrapped():
-        old_target = sys.stdout
-        sys.stdout = open('/dev/null')
-        f()
-        sys.stdout = old_target
-    return wrapped()
+        return forecast
 
 
 if __name__ == '__main__':
     sock = "/tmp/arima.sock"
     if os.path.exists(sock):
         os.remove(sock)
-    server = Server(sock, Accepter())
+    server = Server(sock, Acceptor())
     logger.info("Started server")
     logger.info("%d", os.getpid())
     server.serve()
