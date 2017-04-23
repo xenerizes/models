@@ -136,17 +136,3 @@ class MessageHandler(Handler):
         response.restore.error = 'not implemented'
         return response
 
-
-class Acceptor(object):
-    def __init__(self):
-        self._count = 0
-
-    def accept(self, conn, address):
-        self._count += 1
-        a = Agent(conn, conn)
-        h = MessageHandler(a, ARIMAModel())
-        a.handler = h
-        logger.info("Starting Agent for connection %d", self._count)
-        a.start()
-        a.wait()
-        logger.info("Agent finished connection %d", self._count)
