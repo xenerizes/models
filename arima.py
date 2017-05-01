@@ -50,7 +50,7 @@ class ARIMAModel(Model):
         return bic[0], 2, bic[1]
 
     def get_fitted_values(self):
-        return self._model.fittedvalues 
+        return self._model.fittedvalues
 
     def auto(self):
         ts = self.get_series()

@@ -52,7 +52,7 @@ class Model(object):
     def rmse(self):
         actual = self.get_series()
         fitted = self.get_fitted_values()
-        return ml_metrics.mae(actual, fitted)
+        return ml_metrics.rmse(actual, fitted)
 
 
 class MessageHandler(Handler):
