@@ -17,6 +17,10 @@ def is_stationary(ts):
 
 
 class ARIMAModel(Model):
+    def __init__(self):
+        Model.__init__(self)
+        self._order = None
+
     def select_order_brute_force(self):
         def objfunc(order, endog, exog):
             from statsmodels.tsa.arima_model import ARIMA
@@ -45,18 +49,24 @@ class ARIMAModel(Model):
 
         return bic[0], 2, bic[1]
 
+    def get_fitted_values(self):
+        return self._model.fittedvalues 
+
     def auto(self):
         ts = self.get_series()
         self._period = ts.index[1] - ts.index[0]
         freq = Second(self._period.total_seconds())
-        order = self.select_order()
-        self._model = ARIMA(self.get_series(), order=order, freq=freq).fit()
+        self._order = self.select_order()
+        self._model = ARIMA(self.get_series(), order=self._order, freq=freq).fit()
 
     def predict(self):
-        start_date = self._model.resid.index[-1]
+        start_date = self._model.fittedvalues.index[-1]
         end_date = start_date + self._predict * self._period
-        # shift = self.max() - self.min()
         forecast = self._model.predict(start_date.isoformat(), end_date.isoformat())
+
+        if self._order[1] > 0:
+            shift = self.max() - self.min()
+            forecast += shift
 
         return forecast
 

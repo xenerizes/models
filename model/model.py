@@ -1,6 +1,7 @@
 from agent.agent import Agent, Handler
 import agent.udf_pb2 as udf_pb2
 import pandas as pd
+import ml_metrics
 import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
@@ -28,6 +29,9 @@ class Model(object):
     def get_series(self):
         return pd.Series(data=self._values, index=pd.to_datetime(self._dates))
 
+    def get_fitted_values(self):
+        pass
+
     def auto(self):
         pass
 
@@ -40,14 +44,29 @@ class Model(object):
     def max(self):
         return max(self._values)
 
+    def mae(self):
+        actual = self.get_series()
+        fitted = self.get_fitted_values()
+        return ml_metrics.mae(actual, fitted)
+
+    def rmse(self):
+        actual = self.get_series()
+        fitted = self.get_fitted_values()
+        return ml_metrics.mae(actual, fitted)
+
 
 class MessageHandler(Handler):
     def __init__(self, agent, model):
         self._agent = agent
         self._model = model
+
         self._predict = 0
+        self._mae = False
+        self._rmse = False
+
         self._field = ''
         self._field_type = None
+
         self._begin_response = None
         self._point = None
 
@@ -55,9 +74,12 @@ class MessageHandler(Handler):
         response = udf_pb2.Response()
         response.info.wants = udf_pb2.BATCH
         response.info.provides = udf_pb2.BATCH
+
         response.info.options['predict'].valueTypes.append(udf_pb2.INT)
         response.info.options['field'].valueTypes.append(udf_pb2.STRING)
         response.info.options['type'].valueTypes.append(udf_pb2.STRING)
+        response.info.options['rmse'].valueTypes.append(udf_pb2.BOOL)
+        response.info.options['mae'].valueTypes.append(udf_pb2.BOOL)
 
         return response
 
@@ -74,6 +96,10 @@ class MessageHandler(Handler):
                 self._field = opt.values[0].stringValue
             if opt.name == 'type':
                 self._field_type = opt.values[0].stringValue
+            if opt.name == 'mae':
+                self._mae = opt.values[0].boolValue
+            if opt.name == 'rmse':
+                self._rmse = opt.values[0].boolValue
 
         if self._predict < 1:
             succ = False
@@ -124,6 +150,14 @@ class MessageHandler(Handler):
 
         response.end.CopyFrom(end_req)
         self._agent.write_response(response)
+
+        if self._mae:
+            mae = self._model.mae()
+            logger.info("MAE for fitted values: {}".format(mae))
+
+        if self._rmse:
+            rmse = self._model.rmse()
+            logger.info("RMSE for fitted values: {}".format(rmse))
 
     def snapshot(self):
         response = udf_pb2.Response()
