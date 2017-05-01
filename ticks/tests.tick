@@ -1,0 +1,133 @@
+var w = 60
+var interval = 10s
+var t_long = 10m
+var t_short = 10m
+var f_long = 60
+var f_short = 60 
+
+// запрос целевых функций z_1, z_2
+var z_1_short = batch
+    |query('''
+        SELECT "packet-in_sum"
+        FROM "ofmsgs"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_short)
+
+var z_2_short = batch
+    |query('''
+        SELECT "packet-in_avg-time"
+        FROM "ofmsgs"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_short)
+
+// прогноз ARIMA для z_1
+z_1_short
+    @arima()
+        .field('packet-in_sum')
+        .predict(f_short)
+        .type('double')
+        .mae(true)
+        .rmse(true)
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '1')
+        .tag('duration', 'short')
+
+// прогноз ARIMA для z_2 
+z_2_short
+    @arima()
+        .field('packet-in_avg-time')
+        .predict(f_short)
+        .type('double')
+        .mae(true)
+        .rmse(true)
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '2')
+        .tag('duration', 'short')
+
+
+// прогноз Хольт-Винтерс для z_1
+z_1_short
+    |holtWinters(
+        'packet-in_sum',
+        f_short,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '1')
+        .tag('duration', 'short')
+
+z_1_long
+    |holtWinters(
+        'packet-in_sum',
+        f_long,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '1')
+        .tag('duration', 'long')
+
+// прогноз Хольт-Винтерс для z_2
+hw_z1 = z_1_short
+    |holtWintersiWithFit(
+        'packet-in_avg-time',
+        1,
+        1,
+        interval        
+    )
+        .as('hw_fit_z_1')
+
+hw_z1
+    |eval(lambda: abs("packet-in_sum" - "hw_fit_z_1") / w)
+        .as('mae-z1')
+    |sum("mae-z1")
+    |log()
+
+hw_z1
+    |eval(lambda: pow("packet-in_sum" - "hw_fit_z_1", 2) / w)
+        .as('rmse-z1')
+    |sum("rmse-z1")
+        .as('rmse-sum-z1')
+    |eval(lambda: pow("rmse-sum-z1", 0.5))
+    |log()
+   
+hw_z2 = z_2_short
+    |holtWintersWithFit(
+        'packet-in_avg-time',
+        1,
+        1,
+        interval        
+    )
+
+hw_z2
+    |eval(lambda: pow("packet-in_avg-time" - "hw_fit_z_2", 2) / w)
+        .as('rmse-z2')
+    |sum("rmse-z2")
+        .as('rmse-sum-z2')
+    |eval(lambda: pow("rmse-sum-z2", 0.5))
+    |log()
+
+hw_z2
+    |eval(lambda: abs("packet-in_avg-time" - "hw_fit_z_2") / w)
+        .as('mae-z2')
+    |sum("mae-z2")
+    |log()

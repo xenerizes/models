@@ -1,0 +1,32 @@
+var interval = 10s
+var f_long = 60
+var f_short = 60
+var database = 'ofmsgs'
+var z_1_max = 300
+var z_2_max = 1000
+var address = 'http://127.0.0.1:8000/overload/'
+var logfile = 'tmp/ofmsg-runos-log'
+
+var data = stream
+    |from()
+        .database(database)
+        .measurement('forecast')
+
+var z_1 = data
+    |from()
+        .where(lambda: "z" == '1')
+    |alert()
+        .warn(lambda: "packet-in_sum" > z_1_max)
+        .post(address)
+        .message('Value of z_1: {{ index .Fields "packet-in_sum"}} exceeds max at {{ index .Time }}')
+        .log(logfile)
+
+var z_2 = data
+    |from()
+        .where(lambda: "z" == '2')
+    |alert()
+        .warn(lambda: "packet-in_average-time" > z_2_max)
+        .post(address)
+        .message('Value of z_2: {{ index .Fields "packet-in_average-time"}} exceeds max at {{ index .Time }}')
+        .log(logfile)
+

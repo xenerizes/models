@@ -1,0 +1,165 @@
+var w = 120
+var interval = 10s
+var t_long = 20m
+var t_short = 10m
+var f_long = 60
+var f_short = 60
+
+// запрос целевых функций z_1, z_2
+var z_1_short = batch
+    |query('''
+        SELECT "packet-in_sum"
+        FROM "ofmsgs"."autogen"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_short)
+
+var z_1_long = batch
+    |query('''
+        SELECT "packet-in_sum"
+        FROM "ofmsgs"."autogen"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_long)
+
+var z_2_short = batch
+    |query('''
+        SELECT "packet-in_avg-time"
+        FROM "ofmsgs"."autogen"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_short)
+
+var z_2_long = batch
+    |query('''
+        SELECT "packet-in_avg-time"
+        FROM "ofmsgs"."autogen"."httpjson_runos"
+    ''')
+        .period(w * interval)
+        .every(t_long)
+
+// прогноз ARIMA для z_1
+z_1_short
+    @arima()
+        .field('packet-in_sum')
+        .predict(f_short)
+        .type('double')
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '1')
+        .tag('duration', 'short')
+
+z_1_long
+    @arima()
+        .field('packet-in_sum')
+        .predict(f_long)
+        .type('double')
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '1')
+        .tag('duration', 'long')
+
+// прогноз ARIMA для z_2 
+z_2_short
+    @arima()
+        .field('packet-in_avg-time')
+        .predict(f_short)
+        .type('double')
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '2')
+        .tag('duration', 'short')
+
+z_2_long
+    @arima()
+        .field('packet-in_avg-time')
+        .predict(f_long)
+        .type('double')
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'arima')
+        .tag('z', '2')
+        .tag('duration', 'long')
+
+// прогноз Хольт-Винтерс для z_1
+z_1_short
+    |holtWinters(
+        'packet-in_sum',
+        f_short,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '1')
+        .tag('duration', 'short')
+
+z_1_long
+    |holtWinters(
+        'packet-in_sum',
+        f_long,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '1')
+        .tag('duration', 'long')
+
+// прогноз Хольт-Винтерс для z_2
+z_2_short
+    |holtWinters(
+        'packet-in_avg-time',
+        f_short,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '2')
+        .tag('duration', 'short')
+
+z_2_long
+    |holtWinters(
+        'packet-in_avg-time',
+        f_long,
+        1,
+        interval        
+    )
+    |influxDBOut()
+        .create()
+        .database('ofmsgs')
+        .retentionPolicy('autogen')
+        .measurement('forecast')
+        .tag('model', 'hw')
+        .tag('z', '2')
+        .tag('duration', 'long')
+
+
